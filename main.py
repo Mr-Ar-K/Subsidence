@@ -2,8 +2,8 @@
 Terminal-driven runner for single seam subsidence calculations.
 """
 
-from subsidence_calculator import create_report, format_report, save_json
-from visualizer import plot_advanced_view, plot_simple_map
+from subsidence_calculator import create_report, format_report
+from subsidence_visualization import plot_interactive_map
 
 
 def prompt_float(label, default=None, minimum=None):
@@ -53,6 +53,29 @@ def prompt_extraction_ratio():
         return value
 
 
+def prompt_panel_points():
+    print("Panel boundary points:")
+    print("  Enter multiple vertices in order (clockwise or counter-clockwise).")
+    print("  Minimum 3 points are required.")
+
+    while True:
+        count = int(prompt_float("Number of panel boundary points", default=4, minimum=3))
+        points = []
+
+        for index in range(1, count + 1):
+            print(f"Point {index}:")
+            easting = prompt_float("  Easting")
+            northing = prompt_float("  Northing")
+            points.append((easting, northing))
+
+        unique_points = len(set(points))
+        if unique_points < 3:
+            print("At least 3 unique points are required. Please re-enter all points.")
+            continue
+
+        return points
+
+
 def print_points(points, limit=20):
     print("\nInfluenced points (easting, northing, subsidence in m):")
     print("-" * 72)
@@ -77,8 +100,7 @@ def main():
     print("Enter the values in the terminal. Press Enter to use the default.")
     print()
 
-    center_easting = prompt_float("Panel center easting", default=1000.0)
-    center_northing = prompt_float("Panel center northing", default=2000.0)
+    panel_points = prompt_panel_points()
     thickness = prompt_float("Panel thickness h (m)", default=2.5, minimum=0)
     depth_of_cover = prompt_float("Depth of cover H (m)", default=300.0, minimum=0)
     extraction_ratio = prompt_extraction_ratio()
@@ -88,8 +110,7 @@ def main():
     mesh_spacing = prompt_float("Mesh grid spacing (m)", default=25.0, minimum=0)
 
     report = create_report(
-        center_easting,
-        center_northing,
+        panel_points,
         thickness,
         depth_of_cover,
         extraction_ratio,
@@ -103,12 +124,8 @@ def main():
     print(format_report(report))
     print_points(report["points"], limit=25)
 
-    save_json(report, "subsidence_report.json")
-    print("\nJSON report written to subsidence_report.json")
-
-    print("\nOpening visualizations...")
-    plot_simple_map(report)
-    plot_advanced_view(report)
+    print("\nOpening interactive visualization...")
+    plot_interactive_map(report)
 
     return report
 
