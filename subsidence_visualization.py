@@ -1,9 +1,15 @@
 """Procedural and interactive visualization helpers."""
 
+import subprocess
+import os
+from pathlib import Path
+
+import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import matplotlib.tri as mtri
 import numpy as np
+import plotly.graph_objects as go
 
 
 def _extract_arrays(report):
@@ -127,10 +133,107 @@ def plot_advanced_view(report, save_path=None):
     plt.show()
 
 
+def _plot_interactive_map_browser(report):
+    bounds = report["bounds"]
+    inputs = report["inputs"]
+    e, n, s = _extract_arrays(report)
+    px, py = _panel_polygon_xy(report)
+
+    figure = go.Figure()
+    figure.add_trace(
+        go.Scatter(
+            x=e,
+            y=n,
+            mode="markers",
+            name="Grid points",
+            marker={
+                "size": 8,
+                "color": s * 1000.0,
+                "colorscale": "RdYlGn_r",
+                "colorbar": {"title": "Subsidence (mm)"},
+                "line": {"color": "black", "width": 0.4},
+            },
+            customdata=np.column_stack((s,)),
+            hovertemplate="E: %{x:.2f}<br>N: %{y:.2f}<br>S: %{customdata[0]:.4f} m<extra></extra>",
+        )
+    )
+
+    figure.add_trace(
+        go.Scatter(
+            x=px,
+            y=py,
+            mode="lines",
+            name="Panel boundary",
+            line={"color": "navy", "width": 3},
+        )
+    )
+
+    theta = np.linspace(0.0, 2.0 * np.pi, 120)
+    first_circle = True
+    for panel_point in inputs["panel_points"]:
+        cx = panel_point["easting"]
+        cy = panel_point["northing"]
+        r = bounds["influence_distance"]
+        circle_x = cx + r * np.cos(theta)
+        circle_y = cy + r * np.sin(theta)
+        figure.add_trace(
+            go.Scatter(
+                x=circle_x,
+                y=circle_y,
+                mode="lines",
+                name="Influence circle" if first_circle else None,
+                showlegend=first_circle,
+                line={"color": "crimson", "width": 1, "dash": "dot"},
+                hoverinfo="skip",
+            )
+        )
+        first_circle = False
+
+    figure.add_trace(
+        go.Scatter(
+            x=[inputs["center_easting"]],
+            y=[inputs["center_northing"]],
+            mode="markers",
+            name="Centroid",
+            marker={"symbol": "star", "size": 14, "color": "red"},
+            hovertemplate="Centroid<br>E: %{x:.2f}<br>N: %{y:.2f}<extra></extra>",
+        )
+    )
+
+    figure.update_layout(
+        title="Interactive Subsidence Map",
+        xaxis_title="Easting (m)",
+        yaxis_title="Northing (m)",
+        yaxis={"scaleanchor": "x", "scaleratio": 1},
+        template="plotly_white",
+    )
+
+    output_path = Path("subsidence_interactive.html").resolve()
+    figure.write_html(str(output_path), include_plotlyjs="cdn", auto_open=False)
+    
+    # Try to open in browser using $BROWSER environment variable
+    browser = os.environ.get("BROWSER")
+    if browser:
+        try:
+            subprocess.Popen([browser, output_path.as_uri()])
+            print(f"Interactive map opened in browser: {output_path}")
+        except Exception as e:
+            print(f"Could not open browser: {e}")
+            print(f"HTML map saved to: {output_path}")
+    else:
+        print(f"HTML map saved to: {output_path}")
+        print(f"Open this file in your browser: {output_path.as_uri()}")
+
+
 def plot_interactive_map(report):
     points = report["points"]
     if not points:
         print("No influenced points available for interactive visualization.")
+        return
+
+    backend = matplotlib.get_backend().lower()
+    if "agg" in backend:
+        _plot_interactive_map_browser(report)
         return
 
     bounds = report["bounds"]
@@ -159,8 +262,10 @@ def plot_interactive_map(report):
     )
     ann.set_visible(False)
 
-    def on_click(event):
+    def update_annotation_for_event(event):
         if event.inaxes != ax or event.xdata is None or event.ydata is None:
+            ann.set_visible(False)
+            fig.canvas.draw_idle()
             return
         d = np.sqrt((e - event.xdata) ** 2 + (n - event.ydata) ** 2)
         idx = int(np.argmin(d))
@@ -170,11 +275,21 @@ def plot_interactive_map(report):
             ann.set_text(f"E: {e[idx]:.2f}\nN: {n[idx]:.2f}\nS: {s[idx]:.4f} m")
             ann.set_visible(True)
             fig.canvas.draw_idle()
+        elif ann.get_visible():
+            ann.set_visible(False)
+            fig.canvas.draw_idle()
+
+    def on_click(event):
+        update_annotation_for_event(event)
+
+    def on_move(event):
+        update_annotation_for_event(event)
 
     fig.canvas.mpl_connect("button_press_event", on_click)
+    fig.canvas.mpl_connect("motion_notify_event", on_move)
 
     ax.plot(inputs["center_easting"], inputs["center_northing"], "r*", markersize=15, label="Centroid")
-    ax.set_title("Interactive Subsidence Map (click near a point)")
+    ax.set_title("Interactive Subsidence Map (hover or click near a point)")
     ax.set_xlabel("Easting (m)")
     ax.set_ylabel("Northing (m)")
     ax.set_aspect("equal")
