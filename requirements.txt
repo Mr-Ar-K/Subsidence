@@ -1,7 +1,0 @@
-plotly>=5.0.0
-nbformat>=4.2.0
-flask>=2.0.0
-numpy>=1.20.0
-pandas>=1.2.0
-ipywidgets>=7.6.0
-jupyter>=1.0.0
